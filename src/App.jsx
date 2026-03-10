@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import './App.css'
 
+// So pretty much all we wanna do is have them do a bunch of math problems, ez being +/-, med being 1 by 2 digit muliplication and so on
 function App() {
 
   const listy_color = ['Easy', 'Medium', 'Hard'];
-  const listy_num = ["3 Numbers", "5 Numbers", "7 Numbers", "10 Numbers"]
+  const listy_num = ["3 Questions", "5 Questions", "7 Questions", "10 Questions"]
   const [index, setIndex] = useState(0);
   const [color_index, setcolor_index] = useState(0);
   
@@ -47,9 +48,9 @@ function App() {
     </h5>
 
     <div className='container'>
-      <p className='diff-label'>Difficulty</p>
       <button className='numberOf' onClick={getNumber}>{listy_num[color_index]}</button>
       <button className='difficulty' onClick={buttonClick} style={{backgroundColor: getColor()}}>{listy_color[index]}</button>
+      <button className='start'>Start</button>
     </div>
     </>
   )
