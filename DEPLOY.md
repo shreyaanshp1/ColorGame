@@ -29,7 +29,7 @@ Deploy **this repo** as a single **Node Web Service** (e.g. [Render](https://ren
    ```
 3. **Environment variables** (dashboard on your host):
    - `SERVE_STATIC` = `1` so `server.js` serves `dist/` (recommended on Render instead of relying on `NODE_ENV` alone).
-   - Optional: `NODE_VERSION` = `22.12.0` (or another 20+).
+   - Optional: `NODE_VERSION` = `22` (or another 20+).
    - `VITE_BASE_PATH` = `/` is applied in the **build** command; set it at runtime too only if it must match (usually not for root deploys).
 
 What this does:
