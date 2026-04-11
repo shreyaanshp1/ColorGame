@@ -1,0 +1,17 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Dashboard → New → Blueprint → Connect this repo → apply this file.
+
+services:
+  - type: web
+    name: color-game
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci --include=dev && VITE_BASE_PATH=/ npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SERVE_STATIC
+        value: "1"
