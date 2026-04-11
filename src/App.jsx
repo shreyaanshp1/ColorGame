@@ -1,6 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
 import './App.css'
 
+function multiplayerWsUrl() {
+  const fromEnv = import.meta.env.VITE_WS_URL?.trim()
+  if (fromEnv) return fromEnv
+  if (import.meta.env.DEV) return 'ws://localhost:8080'
+  if (window.location.hostname.endsWith('github.io')) {
+    console.warn(
+      '[Color Game] GitHub Pages needs a hosted WebSocket. Add repo secret VITE_WS_URL (see DEPLOY.md), or deploy the app + server on one host (e.g. Render) instead.',
+    )
+  }
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}`
+}
+
 function App() {
   const difficulties = ['Easy', 'Medium', 'Hard']
   const questionLabels = ['3 Questions', '5 Questions', '7 Questions']
@@ -20,9 +33,10 @@ function App() {
   const [elapsedTime, setElapsedTime] = useState(0)
 
   // Multiplayer state
-  const [ws, setWs] = useState(null)
   const [roomPin, setRoomPin] = useState('')
+  const [joinPlayerName, setJoinPlayerName] = useState('')
   const [playerId, setPlayerId] = useState(null)
+  const [hostPlayerId, setHostPlayerId] = useState(null)
   const [players, setPlayers] = useState([])
   const [multiplayerGameState, setMultiplayerGameState] = useState(null)
   const [waitingForOther, setWaitingForOther] = useState(false)
@@ -31,12 +45,15 @@ function App() {
   const [hasSubmitted, setHasSubmitted] = useState(false)
 
   const wsRef = useRef(null)
-  const multiplayerTimerRef = useRef(null)
+  const handleMultiplayerMessageRef = useRef(() => {})
 
   const questionCount = [3, 5, 7][questionIndex]
   const currentDifficulty = difficulties[difficultyIndex]
   const roundSeconds = difficultySeconds[difficultyIndex]
   const accuracyThreshold = accuracyThresholds[difficultyIndex]
+
+  const isRoomHost =
+    playerId != null && hostPlayerId != null && playerId === hostPlayerId
 
   const getDifficultyColor = () => {
     switch (difficultyIndex) {
@@ -151,9 +168,10 @@ function App() {
     setFeedback(null)
     setStartTime(null)
     setElapsedTime(0)
-    setWs(null)
     setRoomPin('')
+    setJoinPlayerName('')
     setPlayerId(null)
+    setHostPlayerId(null)
     setPlayers([])
     setMultiplayerGameState(null)
     setWaitingForOther(false)
@@ -166,73 +184,132 @@ function App() {
     }
   }
 
+  const attachWsHandlers = (socket) => {
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        handleMultiplayerMessageRef.current(data)
+      } catch (e) {
+        console.error('Invalid message from server', e)
+      }
+    }
+
+    socket.onerror = () => {
+      alert(
+        'Could not connect to the game server. For local play run: npm run dev\n' +
+          '(starts the site and the WebSocket server together.)'
+      )
+    }
+
+    socket.onclose = () => {
+      console.log('WebSocket closed')
+    }
+  }
+
   // Multiplayer functions
   const createRoom = () => {
-    const newWs = new WebSocket('ws://localhost:8080')
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+
+    const newWs = new WebSocket(multiplayerWsUrl())
     wsRef.current = newWs
-    setWs(newWs)
+    attachWsHandlers(newWs)
 
     newWs.onopen = () => {
-      newWs.send(JSON.stringify({
-        type: 'createRoom',
-        name: 'Player 1',
-        difficultyIndex,
-        questionIndex
-      }))
-    }
-
-    newWs.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      handleMessage(data)
-    }
-
-    newWs.onclose = () => {
-      console.log('WebSocket closed')
+      newWs.send(
+        JSON.stringify({
+          type: 'createRoom',
+          name: 'Player 1',
+          difficultyIndex,
+          questionIndex,
+        })
+      )
     }
   }
 
   const joinRoom = () => {
     if (roomPin.length !== 4) return
 
-    const newWs = new WebSocket('ws://localhost:8080')
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
+    }
+
+    const newWs = new WebSocket(multiplayerWsUrl())
     wsRef.current = newWs
-    setWs(newWs)
+    attachWsHandlers(newWs)
 
     newWs.onopen = () => {
-      newWs.send(JSON.stringify({
-        type: 'joinRoom',
-        pin: roomPin,
-        name: 'Player 2'
-      }))
-    }
-
-    newWs.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      handleMessage(data)
-    }
-
-    newWs.onclose = () => {
-      console.log('WebSocket closed')
+      const name = joinPlayerName.trim()
+      newWs.send(
+        JSON.stringify({
+          type: 'joinRoom',
+          pin: String(roomPin).trim(),
+          ...(name ? { name } : {}),
+        })
+      )
     }
   }
 
-  const handleMessage = (data) => {
+  const sendMultiplayer = (payload) => {
+    const socket = wsRef.current
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(payload))
+      return true
+    }
+    alert('Not connected to the server. Run npm run server and try Create / Join again.')
+    return false
+  }
+
+  const startMultiplayerGame = () => {
+    sendMultiplayer({ type: 'startGame', pin: String(roomPin).trim() })
+  }
+
+  const submitMultiplayerGuess = () => {
+    if (
+      sendMultiplayer({
+        type: 'submitGuess',
+        pin: String(roomPin).trim(),
+        guess: {
+          r: Number(guessColor.r),
+          g: Number(guessColor.g),
+          b: Number(guessColor.b),
+        },
+      })
+    ) {
+      setHasSubmitted(true)
+    }
+  }
+
+  const nextMultiplayerQuestion = () => {
+    sendMultiplayer({ type: 'nextQuestion', pin: String(roomPin).trim() })
+  }
+
+  const returnToMenu = () => {
+    restart()
+  }
+
+  handleMultiplayerMessageRef.current = (data) => {
     switch (data.type) {
       case 'roomCreated':
         setRoomPin(data.pin)
         setPlayerId(data.playerId)
+        setHostPlayerId(data.hostPlayerId ?? 1)
         setStage('waiting-for-players')
         break
       case 'roomJoined':
         setPlayerId(data.playerId)
+        setHostPlayerId(data.hostPlayerId ?? null)
         setMultiplayerGameState(data.gameState)
         setStage('waiting-for-players')
         break
       case 'playersUpdate':
         setPlayers(data.players)
+        if (data.hostPlayerId != null) setHostPlayerId(data.hostPlayerId)
         break
       case 'readyToStart':
-        // Creator can start
         break
       case 'gameStarted':
         setMultiplayerGameState(data.gameState)
@@ -243,13 +320,12 @@ function App() {
         setLeaderboard(data.players)
         setStage('multiplayer-feedback')
         setWaitingForOther(false)
-        // Set feedback for current player
         {
-          const myAnswer = data.answers.find(a => a.playerId === playerId)
+          const myAnswer = data.answers.find((a) => a.playerId === playerId)
           if (myAnswer) {
             setFeedback({
               earnedPoint: myAnswer.earnedPoint,
-              percentDifference: myAnswer.percentDifference
+              percentDifference: myAnswer.percentDifference,
             })
           }
         }
@@ -272,69 +348,34 @@ function App() {
       case 'error':
         alert(data.message)
         break
+      default:
+        break
     }
   }
 
-  const startMultiplayerGame = () => {
-    if (ws) {
-      ws.send(JSON.stringify({ type: 'startGame', pin: roomPin }))
-    }
-  }
-
-  const submitMultiplayerGuess = () => {
-    if (ws) {
-      ws.send(JSON.stringify({
-        type: 'submitGuess',
-        pin: roomPin,
-        guess: guessColor
-      }))
-      setHasSubmitted(true)
-    }
-  }
-
-  const nextMultiplayerQuestion = () => {
-    if (ws) {
-      ws.send(JSON.stringify({ type: 'nextQuestion', pin: roomPin }))
-    }
-  }
-
-  const returnToMenu = () => {
-    restart()
-  }
-
-  // Multiplayer countdown and show color
+  // Multiplayer: question countdown (3…2…1) then memorize-color screen
   useEffect(() => {
-    if (!multiplayerGameState) return
+    if (stage !== 'multiplayer-countdown' || !multiplayerGameState) return
 
-    if (multiplayerTimerRef.current) {
-      clearTimeout(multiplayerTimerRef.current)
-      multiplayerTimerRef.current = null
+    if (multiplayerGameState.countdown > 0) {
+      const t = setTimeout(() => {
+        setMultiplayerGameState((prev) =>
+          prev ? { ...prev, countdown: prev.countdown - 1 } : prev
+        )
+      }, 1000)
+      return () => clearTimeout(t)
     }
 
-    if (stage === 'multiplayer-countdown') {
-      if (multiplayerGameState.countdown > 0) {
-        multiplayerTimerRef.current = setTimeout(() => {
-          setMultiplayerGameState(prev => ({ ...prev, countdown: prev.countdown - 1 }))
-        }, 1000)
-      } else {
-        setGuessColor({ r: 128, g: 128, b: 128 })
-        setStage('multiplayer-showColor')
-      }
-    }
-
-    if (stage === 'multiplayer-showColor') {
-      multiplayerTimerRef.current = setTimeout(() => {
-        setStage('multiplayer-guess')
-      }, 2000)
-    }
-
-    return () => {
-      if (multiplayerTimerRef.current) {
-        clearTimeout(multiplayerTimerRef.current)
-        multiplayerTimerRef.current = null
-      }
-    }
+    setGuessColor({ r: 128, g: 128, b: 128 })
+    setStage('multiplayer-showColor')
   }, [stage, multiplayerGameState])
+
+  // Multiplayer: show target color briefly, then guessing UI
+  useEffect(() => {
+    if (stage !== 'multiplayer-showColor') return
+    const t = setTimeout(() => setStage('multiplayer-guess'), 2000)
+    return () => clearTimeout(t)
+  }, [stage])
 
   return (
     <div className='app-shell' style={shellStyle}>
@@ -390,10 +431,18 @@ function App() {
                     onChange={(e) => setRoomPin(e.target.value)}
                     maxLength={4}
                   />
+                  <input
+                    type='text'
+                    placeholder='Your name (optional)'
+                    value={joinPlayerName}
+                    onChange={(e) => setJoinPlayerName(e.target.value)}
+                    maxLength={24}
+                  />
                   <button onClick={joinRoom}>Join</button>
                 </div>
                 <div className='create-section'>
                   <h3>Create Game</h3>
+                  <p className='create-host-note'>You’ll be the host (up to 12 players).</p>
                   <button onClick={createRoom}>Create</button>
                   {roomPin && <p>Your PIN: {roomPin}</p>}
                 </div>
@@ -406,8 +455,27 @@ function App() {
             <>
               <h2>Waiting for Players</h2>
               <p>PIN: {roomPin}</p>
-              <p>Players: {players.map(p => p.name).join(', ')}</p>
-              {players.length === 2 && <button onClick={startMultiplayerGame}>Start Game</button>}
+              <p>
+                Players ({players.length}):{' '}
+                {players
+                  .map((p) =>
+                    `${p.name}${p.id === hostPlayerId ? ' (host)' : ''}`
+                  )
+                  .join(', ')}
+              </p>
+              {players.length < 2 && (
+                <p className='multiplayer-hint'>
+                  Share this PIN so others can join (up to 12 in a room).
+                </p>
+              )}
+              {players.length >= 2 && isRoomHost && (
+                <button className='start' onClick={startMultiplayerGame}>
+                  Start Game
+                </button>
+              )}
+              {players.length >= 2 && !isRoomHost && (
+                <p className='multiplayer-hint'>Waiting for the host to start…</p>
+              )}
             </>
           )}
 
@@ -441,7 +509,9 @@ function App() {
               {!hasSubmitted && <button className='start' onClick={submitMultiplayerGuess}>
                 Submit Guess
               </button>}
-              {waitingForOther && <p>Waiting for other player...</p>}
+              {waitingForOther && (
+                <p>Waiting for other players to submit…</p>
+              )}
               {leaderboard.length > 0 && (
                 <div className='leaderboard-box'>
                   {leaderboard.map((player, index) => (
@@ -489,7 +559,14 @@ function App() {
                   </div>
                 ))}
               </div>
-              <button className='start' onClick={nextMultiplayerQuestion}>Next Question</button>
+              {isRoomHost && (
+                <button className='start' onClick={nextMultiplayerQuestion}>
+                  Next Question
+                </button>
+              )}
+              {!isRoomHost && (
+                <p className='multiplayer-hint'>Waiting for host to continue…</p>
+              )}
             </>
           )}
 

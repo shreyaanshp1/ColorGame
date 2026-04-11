@@ -378,7 +378,22 @@ h5 {
   border-radius: 8px;
   text-align: center;
   font-size: 16px;
-  width: 120px;
+  width: min(100%, 220px);
+  box-sizing: border-box;
+}
+
+.multiplayer-hint {
+  margin: 16px 0 0;
+  font-size: 15px;
+  color: #475569;
+  font-style: italic;
+}
+
+.create-host-note {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: #475569;
+  text-align: center;
 }
 
 .leaderboard-box {

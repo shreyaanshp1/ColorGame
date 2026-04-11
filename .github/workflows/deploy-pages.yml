@@ -25,7 +25,11 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm run build
+      - name: Build (embed multiplayer WebSocket URL)
+        run: npm run build
+        env:
+          # Repo → Settings → Secrets → Actions → add VITE_WS_URL, e.g. wss://your-app.onrender.com
+          VITE_WS_URL: ${{ secrets.VITE_WS_URL }}
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
