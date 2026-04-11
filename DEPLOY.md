@@ -11,7 +11,7 @@ GitHub **Pages cannot run** `server.js` (no Node, no WebSockets). The setup peop
 3. Render reads **`render.yaml`**, creates a **Web Service** named `color-game`, builds with `VITE_BASE_PATH=/`, starts with `npm start`.
 4. When the deploy is **Live**, open the `https://…onrender.com` URL — that single link is the whole game + multiplayer (`wss://` same host).
 
-If the build fails, check the deploy logs; `npm ci --include=dev` keeps Vite available during the build even when `NODE_ENV=production` is set for runtime.
+If the build fails on Render, open the deploy logs. A common issue was **`NODE_ENV=production` during `npm ci`**, which skips **devDependencies** (no Vite). The Blueprint uses **`NPM_CONFIG_PRODUCTION=false npm ci`** and does **not** set `NODE_ENV` in `envVars` so installs stay reliable; **`SERVE_STATIC=1`** still turns on serving `dist/` at runtime.
 
 ---
 
@@ -19,22 +19,23 @@ If the build fails, check the deploy logs; `npm ci --include=dev` keeps Vite ava
 
 Deploy **this repo** as a single **Node Web Service** (e.g. [Render](https://render.com), Railway, Fly.io).
 
-1. **Build command** (must produce `dist/` before start):
+1. **Build command** (must produce `dist/` before start). If your host sets `NODE_ENV=production` during build, use:
    ```bash
-   npm ci && VITE_BASE_PATH=/ npm run build
+   NPM_CONFIG_PRODUCTION=false npm ci && VITE_BASE_PATH=/ npm run build
    ```
 2. **Start command**:
    ```bash
    npm start
    ```
 3. **Environment variables** (dashboard on your host):
-   - `NODE_ENV` = `production` **or** `SERVE_STATIC` = `1` — required so Node serves the `dist/` folder (some hosts omit `NODE_ENV`; then set `SERVE_STATIC=1`).
-   - `VITE_BASE_PATH` = `/` is already applied in the **build** command above; you do not need it at runtime unless you want the server to match a different base.
+   - `SERVE_STATIC` = `1` so `server.js` serves `dist/` (recommended on Render instead of relying on `NODE_ENV` alone).
+   - Optional: `NODE_VERSION` = `22.12.0` (or another 20+).
+   - `VITE_BASE_PATH` = `/` is applied in the **build** command; set it at runtime too only if it must match (usually not for root deploys).
 
 What this does:
 
 - `VITE_BASE_PATH=/` makes Vite build with asset paths at the **site root** (not `/ColorGame/`).
-- `NODE_ENV=production` makes `server.js` serve files from `dist/` and attach WebSockets on the **same port** as the HTTP server.
+- `SERVE_STATIC=1` (or `NODE_ENV=production`) makes `server.js` serve `dist/` and WebSockets on the **same port**.
 - The browser uses **`wss://` + same host** automatically (no `VITE_WS_URL` needed).
 
 Open your service URL (e.g. `https://your-app.onrender.com`)—that is the only link you share.
@@ -59,7 +60,7 @@ If `VITE_WS_URL` is missing, the app tries `wss://*.github.io`, which **will not
 
 ```bash
 npm run build
-VITE_BASE_PATH=/ NODE_ENV=production npm start
+VITE_BASE_PATH=/ SERVE_STATIC=1 npm start
 ```
 
 Then open `http://localhost:8080` (WebSocket is same host/port).

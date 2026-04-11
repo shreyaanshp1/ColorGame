@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      - run: NPM_CONFIG_PRODUCTION=false npm ci
       - name: Build (embed multiplayer WebSocket URL)
         run: npm run build
         env:

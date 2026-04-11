@@ -7,11 +7,14 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm ci --include=dev && VITE_BASE_PATH=/ npm run build
+    # Render sets NODE_ENV=production on the service; plain `npm ci` then skips
+    # devDependencies (no Vite → build fails). Force dev deps for the install step.
+    buildCommand: NPM_CONFIG_PRODUCTION=false npm ci && VITE_BASE_PATH=/ npm run build
     startCommand: npm start
     healthCheckPath: /health
     envVars:
-      - key: NODE_ENV
-        value: production
+      # Static hosting uses SERVE_STATIC; avoid NODE_ENV here so build sees devDependencies.
       - key: SERVE_STATIC
         value: "1"
+      - key: NODE_VERSION
+        value: "22.12.0"
